@@ -1,6 +1,73 @@
 import streamlit as st
 import google.generativeai as genai
 
+# ------------------------- KHUNG CHAT TƯƠNG TÁC VỚI GEMINI -------------------------
+st.markdown("---")
+st.subheader("💬 Trò chuyện trực tiếp với Gemini AI")
+
+# --- 1. Quản lý Session State và Cấu hình API ---
+
+# Khởi tạo session_state để lưu lịch sử hội thoại (giao diện)
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+    
+# Khởi tạo đối tượng CHAT SESSION để Gemini ghi nhớ lịch sử (KEY FIX)
+if "gemini_chat_session" not in st.session_state:
+    st.session_state.gemini_chat_session = None
+
+api_key = st.secrets.get("GEMINI_API_KEY")
+
+if not api_key:
+    st.warning("⚠️ Không tìm thấy khóa API Gemini. Vui lòng cấu hình 'GEMINI_API_KEY' trong `.streamlit/secrets.toml`.")
+else:
+    # Cấu hình và khởi tạo phiên chat chỉ chạy MỘT LẦN (giúp app chạy mượt hơn)
+    if st.session_state.gemini_chat_session is None:
+        try:
+            genai.configure(api_key=api_key)
+            chat_model = genai.GenerativeModel('gemini-pro')
+            # Sử dụng start_chat để tạo đối tượng Chat có khả năng lưu history
+            st.session_state.gemini_chat_session = chat_model.start_chat(history=[])
+        except Exception as e:
+            st.error(f"Lỗi cấu hình Gemini: {e}. Vui lòng kiểm tra lại API Key.")
+            st.stop()
+    
+    chat_session = st.session_state.gemini_chat_session
+
+    # --- 2. Hiển thị Lịch sử Trò chuyện ---
+    
+    # Hiển thị lịch sử đã lưu
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # --- 3. Xử lý Input và Phản hồi ---
+
+    prompt = st.chat_input("Bạn muốn hỏi gì Gemini?")
+
+    if prompt:
+        # a) Hiển thị câu hỏi người dùng và lưu vào lịch sử giao diện
+        st.chat_message("user").markdown(prompt)
+        st.session_state.chat_messages.append({"role": "user", "content": prompt})
+        
+        # b) Gửi câu hỏi đến Gemini
+        with st.chat_message("assistant"):
+            with st.spinner("🤖 Gemini đang suy nghĩ..."):
+                try:
+                    # Gửi tin nhắn qua CHAT SESSION để duy trì bối cảnh.
+                    # Dùng stream=True và st.write_stream() để hiển thị phản hồi dần dần (tối ưu UX).
+                    response_stream = chat_session.send_message(prompt, stream=True)
+                    full_reply = st.write_stream(response_stream)
+                    
+                except Exception as e:
+                    full_reply = f"❌ Lỗi từ Gemini: {e}"
+                    st.markdown(full_reply)
+            
+        # c) Lưu phản hồi đầy đủ vào lịch sử chat của Streamlit
+        st.session_state.chat_messages.append({"role": "assistant", "content": full_reply})
+
+# ----------------------------------------------------------------------------------import streamlit as st
+import google.generativeai as genai
+
 # --- CẤU HÌNH TRANG BAN ĐẦU ---
 st.set_page_config(
     page_title="Streamlit Gemini Chat App",
